@@ -316,7 +316,7 @@ export const searchReferenceMaterials = async (query: string, isMock: boolean = 
       const ai = createAI();
       const response = await ai.models.generateContent({
         model: 'gemini-3.1-pro-preview',
-        contents: `"${query}" 관련 최신 한국 뉴스를 검색해주세요. 동아일보·조선일보·중앙일보·한겨레·연합뉴스·KBS·MBC·SBS·JTBC·매일경제·한국경제 등 주요 언론사 기사를 중심으로 3~4개 찾아서, 각 기사의 제목과 핵심 내용 1~2문장을 한국어로 알려주세요.`,
+        contents: `"${query}" 관련 최신 한국 뉴스를 검색해주세요. 동아일보·조선일보·중앙일보·한겨레·연합뉴스·KBS·MBC·SBS·JTBC·매일경제·한국경제 등 주요 언론사 기사를 중심으로 3~4개 찾아서, 각 기사의 제목과 핵심 내용 1~2문장을 한국어로 알려주세요. 반드시 각 뉴스에 대해 [제목], [언론사], [요약], [URL] 형식을 포함해서 답변해주세요.`,
         config: {
           tools: [{ googleSearch: {} }],
           temperature: 0.1,
@@ -334,13 +334,20 @@ export const searchReferenceMaterials = async (query: string, isMock: boolean = 
           .filter(c => c.web?.uri && isLikelyArticleUrl(c.web.uri))
           .map(c => {
             const uri = c.web!.uri!;
-            const title = c.web?.title ?? '';
+            let title = c.web?.title ?? '';
             const hostname = getHostname(uri);
             const mediaName = inferMediaNameFromHostname(uri);
+
+            // 제목이 도메인이거나 너무 짧으면 텍스트 응답에서 찾아보기
+            if (!title || title === hostname || title.length < 5) {
+              const match = responseText.match(new RegExp(`\\[제목\\]:?\\s*(.*?)(?=\\n|\\[|$)`, 'i'));
+              if (match) title = match[1].trim();
+            }
+
             const keywords = title.replace(/[^\w가-힣\s]/g, '').split(/\s+/).filter(w => w.length > 1).slice(0, 4);
             const matched = textLines.find(l => keywords.filter(k => l.includes(k)).length >= Math.min(2, keywords.length)) ?? '';
             const snippet = matched.replace(/^[-•*\d.]+\s*/, '').replace(uri, '').trim().slice(0, 200);
-            return { uri, title, mediaName, hostname, snippet, image: FALLBACK_NEWS_IMAGE };
+            return { uri, title: title || hostname, mediaName, hostname, snippet, image: FALLBACK_NEWS_IMAGE };
           })
           .filter(item => item.uri && item.title);
       }
@@ -404,8 +411,8 @@ export const generateFactBasedArticle = async (
       const searchRes = await ai.models.generateContent({
         model: 'gemini-3.1-pro-preview',
         contents: `주제: "${topic}"
-${context ? `[참고 정보]: ${context}\n` : ''}
-위 주제와 관련된 최신 한국 뉴스 보도 내용을 Google 검색을 통해 상세하게 정리해주세요. 동아일보·조선일보·중앙일보·한겨레·연합뉴스·KBS·MBC·SBS·JTBC·매일경제·한국경제 등 주요 언론사 기사를 중심으로, 실제 보도된 사실·수치·인물 발언·날짜·기관명을 최대한 구체적으로 정리해주세요.`,
+${context ? `[참고 정보/맥락]: ${context}\n` : ''}
+위 주제와 관련된 최신 한국 뉴스 보도 내용을 Google 검색을 통해 상세하게 정리해주세요. 특히 제공된 [참고 정보]가 있다면 해당 내용을 중심으로 사실 관계를 확인하고, 동아일보·조선일보·중앙일보·한겨레·연합뉴스·KBS·MBC·SBS·JTBC·매일경제·한국경제 등 주요 언론사 기사를 교차 검증하여 실제 보도된 사실·수치·인물 발언·날짜·기관명을 구체적으로 정리해주세요.`,
         config: {
           tools: [{ googleSearch: {} }],
           temperature: 0.1,
@@ -420,7 +427,9 @@ ${context ? `[참고 정보]: ${context}\n` : ''}
       }
       const chunks = searchRes.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
 
-      if (searchContent.length < 50 && chunks.length === 0) {
+      // 맥락 정보가 있다면 검색 결과가 조금 부족해도 진행
+      const minLength = context ? 20 : 50;
+      if (searchContent.length < minLength && chunks.length === 0 && !context) {
         throw new Error('최신 정보를 검색하지 못했습니다. 잠시 후 다시 시도해주세요.');
       }
 
