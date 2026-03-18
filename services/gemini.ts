@@ -187,10 +187,11 @@ export const generateCoverageSuggestions = async (isMock: boolean = false) => {
     try {
       const ai = createAI();
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3-flash-preview',
         contents:
           '당신은 동아일보의 AI 편집국장입니다. 정치, 경제, 사회, IT/과학, 연예, 스포츠 전 분야를 통틀어 실시간으로 취재할 가치가 높은 4가지 아이템을 추천하세요. 반드시 현재 실제로 발생하고 있는 최신 뉴스여야 합니다.',
         config: {
+          tools: [{ googleSearch: {} }],
           temperature: 0.2,
           responseMimeType: 'application/json',
           responseSchema: {
@@ -238,7 +239,7 @@ export const searchReferenceMaterials = async (query: string, isMock: boolean = 
     try {
       const ai = createAI();
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3-flash-preview',
         contents: `"${query}" 주제에 대해 심층 취재를 위한 참고 자료와 관련 보도 기사들을 찾아주세요.
 각 자료의 제목, URL, 언론사명, 그리고 핵심 내용을 요약해서 제공해주세요.
 가능하면 신뢰도 높은 언론사/공식 자료를 우선으로 정리해주세요.

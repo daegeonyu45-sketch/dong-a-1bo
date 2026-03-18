@@ -220,10 +220,18 @@ const AIWriter: React.FC = () => {
       return;
     }
     setSearchLoading(true);
+    setErrorMsg('');
     try {
       const data = await searchReferenceMaterials(q.trim(), false);
       setSearchResults(Array.isArray(data?.references) ? data.references : []);
-    } catch { /* 무시 */ } finally {
+    } catch (e: unknown) {
+      console.error('Search error:', e);
+      if (e instanceof Error && e.message === 'QUOTA_EXCEEDED') {
+        setErrorMsg('API 할당량이 소진되어 검색 결과를 불러올 수 없습니다.');
+      } else {
+        setErrorMsg('검색 중 오류가 발생했습니다. API 키 설정을 확인해주세요.');
+      }
+    } finally {
       setSearchLoading(false);
     }
   }, []);
@@ -268,14 +276,16 @@ const AIWriter: React.FC = () => {
 
   const fetchSuggestions = useCallback(async () => {
     setLoadingSuggestions(true);
+    setErrorMsg('');
     try {
       const data = await generateCoverageSuggestions(false);
       setSuggestions(data || []);
-      setErrorMsg('');
     } catch (e: unknown) {
-      console.error(e);
+      console.error('Fetch suggestions error:', e);
       if (e instanceof Error && e.message === 'QUOTA_EXCEEDED') {
         setErrorMsg('API 할당량이 소진되어 실시간 이슈를 불러올 수 없습니다.');
+      } else {
+        setErrorMsg('실시간 이슈를 불러오는 중 오류가 발생했습니다. API 키 설정을 확인해주세요.');
       }
     } finally {
       setLoadingSuggestions(false);
@@ -575,6 +585,12 @@ const AIWriter: React.FC = () => {
               Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="bg-white/50 border border-gray-100 rounded-xl p-4 h-32 animate-pulse" />
               ))
+            ) : errorMsg && suggestions.length === 0 ? (
+              <div className="col-span-full py-8 px-4 text-center bg-orange-50 rounded-xl border border-orange-200">
+                <AlertCircle size={24} className="mx-auto mb-2 text-orange-500" />
+                <p className="text-orange-700 font-bold text-sm mb-1">{errorMsg}</p>
+                <p className="text-orange-600/70 text-xs">Vercel 환경 변수(GEMINI_API_KEY) 설정을 확인하고 재배포해주세요.</p>
+              </div>
             ) : Array.isArray(suggestions) && suggestions.length > 0 ? (
               suggestions.map((item) => {
                 const urgencyClasses: Record<string, string> = {
