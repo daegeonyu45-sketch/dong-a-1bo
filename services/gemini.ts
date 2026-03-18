@@ -260,7 +260,7 @@ export const generateCoverageSuggestions = async (isMock: boolean = false) => {
       const currentDate = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.1-pro-preview',
+        model: 'gemini-3-flash-preview',
         contents: `당신은 대한민국 대표 일간지인 동아일보의 AI 편집국장입니다. 오늘 날짜는 ${currentDate}입니다. Google 검색 도구를 사용하여 현재 대한민국에서 가장 화제가 되고 있는 정치, 경제, 사회, IT/과학 분야의 핵심 뉴스 4가지를 찾아 취재 아이템으로 추천하세요. 반드시 현재 실제로 보도되고 있는 실시간 속보 및 주요 뉴스여야 합니다.`,
         config: {
           tools: [{ googleSearch: {} }],
@@ -283,9 +283,16 @@ export const generateCoverageSuggestions = async (isMock: boolean = false) => {
         },
       });
 
-      const text = response.text?.trim();
+      let text = response.text?.trim();
+      
+      // Fallback: If .text is empty, try to extract from parts directly
+      if (!text) {
+        const parts = response.candidates?.[0]?.content?.parts || [];
+        text = parts.map(p => p.text || '').join('').trim();
+      }
+
       if (!text) throw new Error('Empty response from AI');
-      return JSON.parse(text);
+      return safeJsonParse(text);
     } catch (error) {
       return handleAIError(error);
     }
@@ -402,7 +409,12 @@ export const generateFactBasedArticle = async (
         },
       });
 
-      const searchContent = searchRes.text?.trim() ?? '';
+      let searchContent = searchRes.text?.trim() ?? '';
+      
+      if (!searchContent) {
+        const parts = searchRes.candidates?.[0]?.content?.parts || [];
+        searchContent = parts.map(p => p.text || '').join('').trim();
+      }
       const chunks = searchRes.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
 
       if (searchContent.length < 50 && chunks.length === 0) {
@@ -460,7 +472,13 @@ ${searchContent}
         },
       });
 
-      const parsed = safeJsonParse(writeRes.text);
+      let articleText = writeRes.text?.trim() || '';
+      if (!articleText) {
+        const parts = writeRes.candidates?.[0]?.content?.parts || [];
+        articleText = parts.map(p => p.text || '').join('').trim();
+      }
+
+      const parsed = safeJsonParse(articleText);
       return {
         ...parsed,
         searchSources: sources,
