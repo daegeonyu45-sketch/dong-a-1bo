@@ -332,20 +332,28 @@ const AIWriter: React.FC = () => {
     }
   };
 
-  const handleCreate = async () => {
-    if (!topic.trim()) {
-      alert('주제를 입력하세요.');
+  const handleCreate = async (retryId?: string) => {
+    if (loading || !topic.trim()) {
+      if (!topic.trim()) alert('주제를 입력하세요.');
       return;
+    }
+
+    // 리트라이가 아니면 이전 데이터 초기화
+    if (!retryId) {
+      setArticleData(null);
+      setImageResult(null);
+      localStorage.removeItem('donga_writer_article');
+      localStorage.removeItem('donga_writer_image');
     }
 
     setLoading(true);
     setErrorMsg('');
-
+    
     try {
       setStatusText('최신 기사 검색 중...');
       const result = (await generateFactBasedArticle(topic, category, false)) as GeneratedArticle;
 
-      const articleId = `art_${Date.now()}`;
+      const articleId = retryId || `art_${Date.now()}`;
       const cleaned = cleanContent(result.content);
       const normalizedSources = normalizeSearchSources(result.searchSources || [], topic);
 
@@ -379,10 +387,12 @@ const AIWriter: React.FC = () => {
       await saveToDashboard(articleWithImage, img); // 이미지 포함해서 업데이트
       showToast('기사가 대시보드에 저장되었습니다 ✓');
     } catch (e: unknown) {
+      console.error('Article creation error:', e);
       if (e instanceof Error && e.message === 'QUOTA_EXCEEDED') {
         setErrorMsg('API 할당량이 소진되었습니다.');
       } else {
-        setErrorMsg('기사 생성 중 오류가 발생했습니다.');
+        const msg = e instanceof Error ? e.message : String(e);
+        setErrorMsg(`기사 생성 중 오류가 발생했습니다: ${msg}`);
       }
     } finally {
       setLoading(false);
@@ -605,7 +615,13 @@ const AIWriter: React.FC = () => {
               <div className="col-span-full py-8 px-4 text-center bg-orange-50 rounded-xl border border-orange-200">
                 <AlertCircle size={24} className="mx-auto mb-2 text-orange-500" />
                 <p className="text-orange-700 font-bold text-sm mb-1">{errorMsg}</p>
-                <p className="text-orange-600/70 text-xs">Vercel 환경 변수(GEMINI_API_KEY) 설정이 올바른지 확인해주세요.</p>
+                <p className="text-orange-600/70 text-xs mb-4">Vercel 환경 변수(GEMINI_API_KEY) 설정이 올바른지 확인해주세요.</p>
+                <button 
+                  onClick={fetchSuggestions}
+                  className="px-4 py-2 bg-orange-500 text-white rounded-lg text-xs font-bold hover:bg-orange-600 transition-colors"
+                >
+                  다시 시도
+                </button>
               </div>
             ) : Array.isArray(suggestions) && suggestions.length > 0 ? (
               suggestions.map((item) => {
@@ -713,6 +729,14 @@ const AIWriter: React.FC = () => {
               <p className={`font-bold ${errorMsg ? 'text-orange-600' : 'text-blue-800'} m-0 text-base`}>
                 {errorMsg || statusText}
               </p>
+              {errorMsg && (
+                <button 
+                  onClick={() => handleCreate(articleData?.id)}
+                  className="mt-4 px-6 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-bold hover:bg-orange-600 transition-all shadow-md hover:shadow-lg active:scale-95"
+                >
+                  다시 시도
+                </button>
+              )}
             </div>
           )}
         </div>

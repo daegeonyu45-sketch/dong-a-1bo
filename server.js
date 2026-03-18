@@ -15,6 +15,27 @@ async function startServer() {
 const FALLBACK_NEWS_IMAGE =
   'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=1200&q=80';
 
+const callWithRetry = async (fn, retries = 3, delay = 1500) => {
+  let lastError;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      const errorStr = String(error);
+      if (errorStr.includes('429') || errorStr.includes('quota') || errorStr.includes('RESOURCE_EXHAUSTED') || errorStr.includes('503') || errorStr.includes('500')) {
+        if (i < retries) {
+          console.log(`[retry] API issue (${errorStr.slice(0, 30)}...), retrying ${i + 1}/${retries} in ${delay * (i + 1)}ms...`);
+          await new Promise(r => setTimeout(r, delay * (i + 1)));
+          continue;
+        }
+      }
+      throw error;
+    }
+  }
+  throw lastError;
+};
+
 const decodeHtml = (text = '') =>
   text
     .replace(/<b>/gi, '')
@@ -198,14 +219,14 @@ app.get('/api/search-news', async (req, res) => {
     const ai = new GoogleGenAI({ apiKey });
 
     // Gemini Google Search grounding — 서버에서 호출하므로 CORS/차단 없음
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+    const response = await callWithRetry(() => ai.models.generateContent({
+      model: 'gemini-3.1-pro-preview',
       contents: `"${query}" 관련 최신 한국 뉴스를 검색해주세요. 동아일보·조선일보·중앙일보·한겨레·연합뉴스·KBS·MBC·SBS·JTBC·매일경제·한국경제 등 주요 언론사 기사를 중심으로 3~4개 찾아서, 각 기사의 제목과 핵심 내용 1~2문장을 한국어로 알려주세요.`,
       config: {
         tools: [{ googleSearch: {} }],
         temperature: 0.1,
       },
-    });
+    }));
 
     const responseText = response.text ?? '';
 
@@ -301,21 +322,30 @@ app.post('/api/write-article', async (req, res) => {
     const ai = new GoogleGenAI({ apiKey });
 
     // ── 1단계: googleSearch grounding으로 실제 최신 기사 내용 수집 ──
-    // 이 단계의 responseText = 실제 검색된 내용 → 2단계 기사 작성의 원본 데이터
-    const searchRes = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `"${topic}"을 검색해서 최신 한국 뉴스 보도 내용을 상세하게 정리해주세요.
+    let searchRes;
+    try {
+      searchRes = await callWithRetry(() => ai.models.generateContent({
+        model: 'gemini-3.1-pro-preview',
+        contents: `"${topic}"을 검색해서 최신 한국 뉴스 보도 내용을 상세하게 정리해주세요.
 동아일보·조선일보·중앙일보·한겨레·연합뉴스·KBS·MBC·SBS·JTBC·매일경제·한국경제 등 주요 언론사 기사를 중심으로,
 실제 보도된 사실·수치·인물 발언·날짜·기관명을 최대한 구체적으로 정리해주세요.`,
-      config: {
-        tools: [{ googleSearch: {} }],
-        temperature: 0.1,
-      },
-    });
+        config: {
+          tools: [{ googleSearch: {} }],
+          temperature: 0.1,
+        },
+      }));
+    } catch (searchErr) {
+      console.error('[write-article] search step failed:', searchErr);
+      throw new Error('최신 정보를 검색하는 중 오류가 발생했습니다. (네트워크 또는 할당량 문제)');
+    }
 
     const searchContent = searchRes.text?.trim() ?? '';
     const chunks = searchRes.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
     console.log(`[write-article] step1 grounding chunks: ${chunks.length}, content length: ${searchContent.length}`);
+
+    if (searchContent.length < 50 && chunks.length === 0) {
+      throw new Error('최신 정보를 검색하지 못했습니다. 잠시 후 다시 시도해주세요.');
+    }
 
     // 출처 메타데이터: chunks URL + searchContent에서 snippet 추출
     const contentLines = searchContent.split('\n').map(l => l.trim()).filter(Boolean);
@@ -342,8 +372,8 @@ app.post('/api/write-article', async (req, res) => {
     const finalSources = trustedSources.length >= 2 ? trustedSources : sources;
 
     // ── 2단계: 수집된 실제 내용으로 기사 작성 (JSON schema 사용) ──
-    const writeRes = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+    const writeRes = await callWithRetry(() => ai.models.generateContent({
+      model: 'gemini-3.1-pro-preview',
       contents: `당신은 동아일보의 전문 기자입니다.
 주제: "${topic}" (카테고리: ${category || 'general'})
 
@@ -376,16 +406,19 @@ ${searchContent}
         },
         temperature: 0.2,
       },
-    });
+    }));
 
     const articleText = writeRes.text?.trim() ?? '';
     let parsed;
     try {
-      const clean = articleText.replace(/```json|```/g, '').trim();
+      // JSON 블록만 추출하는 더 견고한 방식
+      const jsonMatch = articleText.match(/\{[\s\S]*\}/);
+      const jsonToParse = jsonMatch ? jsonMatch[0] : articleText;
+      const clean = jsonToParse.replace(/```json|```/g, '').trim();
       parsed = JSON.parse(clean);
     } catch (parseErr) {
-      console.error('[write-article] JSON parse failed:', articleText.slice(0, 300));
-      throw new Error('기사 JSON 파싱 실패: ' + parseErr.message);
+      console.error('[write-article] JSON parse failed:', articleText.slice(0, 500));
+      throw new Error('기사 데이터 형식이 올바르지 않습니다. (JSON 파싱 실패)');
     }
 
     console.log(`[write-article] done. sources: ${finalSources.length}, title: "${parsed.title?.slice(0,30)}"`);
@@ -421,8 +454,8 @@ app.get('/api/suggestions', async (req, res) => {
 
     const currentDate = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+    const response = await callWithRetry(() => ai.models.generateContent({
+      model: 'gemini-3.1-pro-preview',
       contents: `당신은 대한민국 대표 일간지인 동아일보의 AI 편집국장입니다. 오늘 날짜는 ${currentDate}입니다. Google 검색 도구를 사용하여 현재 대한민국에서 가장 화제가 되고 있는 정치, 경제, 사회, IT/과학 분야의 핵심 뉴스 4가지를 찾아 취재 아이템으로 추천하세요. 반드시 현재 실제로 보도되고 있는 실시간 속보 및 주요 뉴스여야 합니다.`,
       config: {
         tools: [{ googleSearch: {} }],
@@ -443,7 +476,7 @@ app.get('/api/suggestions', async (req, res) => {
           },
         },
       },
-    });
+    }));
 
     const text = response.text?.trim();
     if (!text) throw new Error('Empty response');

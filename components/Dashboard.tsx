@@ -34,7 +34,6 @@ const Dashboard = () => {
 
   const loadData = useCallback(async () => {
     try {
-      await dbStorage.migrateFromLocalStorage();
       const savedArticles = await dbStorage.getAll();
       const filtered = savedArticles.filter(a => !deletedIds.current.has(a.id));
       
@@ -53,7 +52,11 @@ const Dashboard = () => {
   }, []);
 
   useEffect(() => {
-    loadData(); // Initial load
+    const init = async () => {
+      await dbStorage.migrateFromLocalStorage();
+      loadData();
+    };
+    init();
     const interval = setInterval(loadData, 3000);
     return () => clearInterval(interval);
   }, [loadData]);
