@@ -35,18 +35,52 @@ const extractJson = (text: string) => {
 };
 
 const safeJsonParse = (text: string) => {
-  const extracted = extractJson(text);
+  let extracted = extractJson(text);
   if (!extracted) return null;
 
   try {
     return JSON.parse(extracted);
   } catch (e) {
-    // Attempt 1: Remove trailing commas
+    const errorMsg = e instanceof Error ? e.message : String(e);
+    
+    // Attempt 1: Handle unterminated JSON (cut off)
+    if (errorMsg.includes('Unterminated') || errorMsg.includes('Unexpected end')) {
+      try {
+        let fixed = extracted.trim();
+        
+        // If it ends inside a string, close it
+        const lastQuote = fixed.lastIndexOf('"');
+        const secondLastQuote = fixed.lastIndexOf('"', lastQuote - 1);
+        // This is a very naive check, but can help
+        if (lastQuote !== -1 && (secondLastQuote === -1 || fixed.slice(lastQuote - 1, lastQuote) !== '\\')) {
+           // Check if we are likely inside a string
+           const quotesCount = (fixed.match(/"/g) || []).length;
+           if (quotesCount % 2 !== 0) {
+             fixed += '"';
+           }
+        }
+
+        // Close open braces and brackets
+        const openBraces = (fixed.match(/{/g) || []).length;
+        const closeBraces = (fixed.match(/}/g) || []).length;
+        const openBrackets = (fixed.match(/\[/g) || []).length;
+        const closeBrackets = (fixed.match(/\]/g) || []).length;
+        
+        fixed += '}'.repeat(Math.max(0, openBraces - closeBraces));
+        fixed += ']'.repeat(Math.max(0, openBrackets - closeBrackets));
+        
+        return JSON.parse(fixed);
+      } catch {
+        // ignore and try next
+      }
+    }
+
+    // Attempt 2: Remove trailing commas
     try {
       const fixed = extracted.replace(/,\s*([}\]])/g, '$1');
       return JSON.parse(fixed);
     } catch {
-      // Attempt 2: Handle unescaped newlines in strings
+      // Attempt 3: Handle unescaped newlines in strings
       try {
         const fixed = extracted.replace(/\n/g, '\\n')
                                .replace(/\\n\s*([}\]])/g, '$1') // restore structure
@@ -96,7 +130,15 @@ export const handleAIError = (error: unknown) => {
     throw new Error('INTERNAL_SERVER_ERROR');
   }
 
-  throw error;
+  if (errorStr.includes('Empty response')) {
+    throw new Error('AI가 응답을 생성하지 못했습니다. 다시 시도해주세요. (Empty Response)');
+  }
+
+  if (errorStr.includes('JSON')) {
+    throw new Error('AI 응답 형식이 올바르지 않습니다. 다시 시도해주세요. (JSON Parse Error)');
+  }
+
+  throw new Error(`Gemini API Error Details:\n${errorStr}`);
 };
 
 let apiQueue: Promise<void> = Promise.resolve();
@@ -260,40 +302,48 @@ export const generateCoverageSuggestions = async (isMock: boolean = false) => {
       const currentDate = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `당신은 대한민국 대표 일간지인 동아일보의 AI 편집국장입니다. 오늘 날짜는 ${currentDate}입니다. Google 검색 도구를 사용하여 현재 대한민국에서 가장 화제가 되고 있는 정치, 경제, 사회, IT/과학 분야의 핵심 뉴스 4가지를 찾아 취재 아이템으로 추천하세요. 반드시 현재 실제로 보도되고 있는 실시간 속보 및 주요 뉴스여야 합니다.`,
+        model: 'gemini-3.1-pro-preview', // Use pro for better tool reliability
+        contents: `당신은 대한민국 대표 일간지인 동아일보의 AI 편집국장입니다. 오늘 날짜는 ${currentDate}입니다. Google 검색 도구를 사용하여 현재 대한민국에서 가장 화제가 되고 있는 정치, 경제, 사회, IT/과학 분야의 핵심 뉴스 4가지를 찾아 취재 아이템으로 추천하세요. 반드시 현재 실제로 보도되고 있는 실시간 속보 및 주요 뉴스여야 합니다. 답변은 반드시 아래 JSON 형식의 배열로만 작성해주세요.
+[
+  {
+    "id": "unique_id",
+    "title": "기사 제목",
+    "category": "분야",
+    "angle": "취재 방향",
+    "urgency": "High/Medium/Low"
+  }
+]`,
         config: {
           tools: [{ googleSearch: {} }],
-          temperature: 0.1,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                id: { type: Type.STRING },
-                title: { type: Type.STRING },
-                category: { type: Type.STRING },
-                angle: { type: Type.STRING },
-                urgency: { type: Type.STRING },
-              },
-              required: ['id', 'title', 'category', 'angle', 'urgency'],
-            },
-          },
-          maxOutputTokens: 1000,
+          temperature: 0.2,
+          maxOutputTokens: 2000,
         },
       });
 
       let text = response.text?.trim();
       
-      // Fallback: If .text is empty, try to extract from parts directly
       if (!text) {
         const parts = response.candidates?.[0]?.content?.parts || [];
         text = parts.map(p => p.text || '').join('').trim();
       }
 
-      if (!text) throw new Error('Empty response from AI');
-      return safeJsonParse(text);
+      if (!text) {
+        // If still empty, maybe it's a grounding issue. Try to check grounding chunks.
+        const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+        if (chunks.length > 0) {
+          // If we have chunks but no text, something is wrong with the model's generation.
+          // Fallback to a simpler prompt without search if it keeps failing, 
+          // but for now let's just throw a more descriptive error.
+          throw new Error('AI returned grounding metadata but no text response.');
+        }
+        throw new Error('Empty response from AI');
+      }
+
+      const parsed = safeJsonParse(text);
+      if (!parsed) throw new Error('Failed to parse AI response as JSON');
+      
+      // Ensure it's an array
+      return Array.isArray(parsed) ? parsed : (parsed.items || []);
     } catch (error) {
       return handleAIError(error);
     }
