@@ -183,13 +183,23 @@ export const generateCoverageSuggestions = async (isMock: boolean = false) => {
     ];
   }
 
+  const currentDate = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+
   return callWithRetry(async () => {
     try {
       const ai = createAI();
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents:
-          '당신은 동아일보의 AI 편집국장입니다. Google 검색 도구를 사용하여 지금 이 순간(실시간) 가장 화제가 되고 있는 정치, 경제, 사회, IT/과학 분야의 핵심 뉴스 4가지를 찾아 취재 아이템으로 추천하세요. 반드시 현재 실제로 보도되고 있는 실시간 속보여야 하며, 가상의 뉴스를 만들지 마세요.',
+          `당신은 대한민국 대표 일간지인 동아일보의 AI 편집국장입니다. 
+오늘 날짜는 ${currentDate}입니다. 
+Google 검색 도구를 사용하여 현재 대한민국에서 가장 화제가 되고 있는 정치, 경제, 사회, IT/과학 분야의 핵심 뉴스 4가지를 찾아 취재 아이템으로 추천하세요. 
+
+지침:
+1. 반드시 현재 실제로 보도되고 있는 실시간 속보 및 주요 뉴스여야 합니다.
+2. 연합뉴스, 뉴스1, 뉴시스 등 주요 통신사와 동아일보를 포함한 주요 일간지의 보도를 우선적으로 참고하세요.
+3. 가상의 뉴스를 절대로 만들지 마세요.
+4. 각 아이템에 대해 전문적인 취재 방향(angle)과 긴급도(urgency: High/Medium/Low)를 설정하세요.`,
         config: {
           tools: [{ googleSearch: {} }],
           temperature: 0.1,
@@ -235,14 +245,21 @@ export const searchReferenceMaterials = async (query: string, isMock: boolean = 
     };
   }
 
+  const currentDate = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+
   return callWithRetry(async () => {
     try {
       const ai = createAI();
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `"${query}" 주제에 대해 현재 실제로 보도된 뉴스 기사들을 검색하여 심층 취재를 위한 참고 자료를 찾아주세요.
-CRITICAL: 반드시 Google 검색 결과에 나타난 실제 기사의 제목과 정확한 URL(uri)만 제공해야 합니다. 절대로 존재하지 않는 가상의 URL을 생성하지 마세요.
-각 자료의 제목, 실제 URL, 언론사명, 그리고 핵심 내용을 요약해서 제공해주세요.
+        contents: `당신은 동아일보의 AI 편집국장입니다. 오늘 날짜는 ${currentDate}입니다. 
+"${query}" 주제에 대해 현재 대한민국에서 실제로 보도되고 있는 최신 뉴스 기사들을 검색하여 심층 취재를 위한 참고 자료를 찾아주세요.
+
+지침:
+1. 반드시 Google 검색 결과에 나타난 실제 기사의 제목과 정확한 URL(uri)만 제공해야 합니다.
+2. 연합뉴스, 뉴스1, 뉴시스 등 주요 통신사와 동아일보를 포함한 주요 일간지의 보도를 최우선적으로 참고하세요.
+3. 절대로 존재하지 않는 가상의 URL을 생성하지 마세요.
+4. 각 자료의 제목, 실제 URL, 언론사명, 그리고 핵심 내용을 요약해서 제공해주세요.
 
 응답은 반드시 아래 형식의 유효한 JSON으로만 답변해주세요. 
 CRITICAL: 모든 문자열 값 내의 큰따옴표(")는 반드시 백슬래시(\)로 이스케이프 처리해야 합니다(예: \"내용\"). 
