@@ -1,5 +1,8 @@
 import { GoogleGenAI, Type, Modality } from '@google/genai';
 
+const FALLBACK_NEWS_IMAGE =
+  'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=1200&q=80';
+
 const extractJson = (text: string) => {
   if (!text) return '';
   try {
@@ -133,66 +136,154 @@ const callWithRetry = async <T>(fn: () => Promise<T>, maxRetries = 3): Promise<T
 
 export const createAI = () => {
   const apiKey =
-    (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) ||
-    (typeof process !== 'undefined' && process.env?.API_KEY) ||
+    process.env?.GEMINI_API_KEY ||
+    process.env?.API_KEY ||
     import.meta.env?.VITE_API_KEY ||
     import.meta.env?.VITE_GEMINI_API_KEY;
 
-  if (!apiKey) {
+  if (!apiKey || apiKey.includes('TODO') || apiKey.includes('YOUR_')) {
     console.error(
-      'Gemini API Key is missing. Checked: process.env.GEMINI_API_KEY, process.env.API_KEY, import.meta.env.VITE_API_KEY, import.meta.env.VITE_GEMINI_API_KEY'
+      'Gemini API Key is missing or invalid. Please check your environment variables.'
     );
-    throw new Error('API key must be set when using the Gemini API.');
+    throw new Error('A valid Gemini API key is required. Please set GEMINI_API_KEY in the application settings.');
   }
 
   return new GoogleGenAI({ apiKey });
+};
+
+// Helper functions moved from server.js
+const getHostname = (uri: string) => {
+  try {
+    return new URL(uri).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return '';
+  }
+};
+
+const inferMediaNameFromHostname = (uri: string) => {
+  const hostname = getHostname(uri);
+
+  if (hostname.includes('donga.com')) return '동아일보';
+  if (hostname.includes('chosun.com')) return '조선일보';
+  if (hostname.includes('joongang.co.kr') || hostname.includes('joongang.joins.com')) return '중앙일보';
+  if (hostname.includes('hani.co.kr')) return '한겨레';
+  if (hostname.includes('khan.co.kr')) return '경향신문';
+  if (hostname.includes('sbs.co.kr')) return 'SBS';
+  if (hostname.includes('kbs.co.kr')) return 'KBS';
+  if (hostname.includes('imbc.com') || hostname.includes('mbc.co.kr')) return 'MBC';
+  if (hostname.includes('ytn.co.kr')) return 'YTN';
+  if (hostname.includes('mk.co.kr')) return '매일경제';
+  if (hostname.includes('hankyung.com')) return '한국경제';
+  if (hostname.includes('yna.co.kr') || hostname.includes('yna.kr')) return '연합뉴스';
+  if (hostname.includes('news1.kr')) return '뉴스1';
+  if (hostname.includes('newsis.com')) return '뉴시스';
+  if (hostname.includes('jtbc.co.kr')) return 'JTBC';
+  if (hostname.includes('tvchosun.com')) return 'TV조선';
+  if (hostname.includes('mbn.co.kr')) return 'MBN';
+
+  return hostname || '주요 언론';
+};
+
+const isLikelyArticleUrl = (uri: string) => {
+  try {
+    const url = new URL(uri);
+    const path = url.pathname.toLowerCase();
+    const search = url.search.toLowerCase();
+
+    if (!path || path === '/' || path === '/main.html' || path === '/index.html') {
+      return false;
+    }
+
+    const blocked = ['/search', '/category', '/tag', '/topic'];
+    if (blocked.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) {
+      return false;
+    }
+
+    if (path.includes('article') || path.includes('read.nhn') || path.includes('view')) {
+      return true;
+    }
+
+    if (
+      search.includes('query=') ||
+      search.includes('keyword=') ||
+      search.includes('search=') ||
+      search.includes('q=')
+    ) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const TRUSTED_DOMAINS = [
+  'donga.com', 'chosun.com', 'joongang.co.kr', 'joins.com', 'hani.co.kr',
+  'khan.co.kr', 'yna.co.kr', 'yonhapnews.co.kr', 'news1.kr', 'newsis.com',
+  'ytn.co.kr', 'sbs.co.kr', 'kbs.co.kr', 'mbc.co.kr', 'imbc.com',
+  'jtbc.co.kr', 'tvchosun.com', 'mbn.co.kr', 'mk.co.kr', 'hankyung.com',
+  'sedaily.com', 'dt.co.kr', 'etnews.com', 'zdnet.co.kr', 'bloter.net',
+  'hankookilbo.com', 'ohmynews.com', 'pressian.com', 'newspim.com',
+  'edaily.co.kr', 'mt.co.kr', 'heraldcorp.com',
+];
+
+const isTrustedMedia = (uri: string) => {
+  try {
+    const hostname = new URL(uri).hostname.replace(/^www\./, '').toLowerCase();
+    return TRUSTED_DOMAINS.some((d) => hostname === d || hostname.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
 };
 
 export const generateCoverageSuggestions = async (isMock: boolean = false) => {
   if (isMock) {
     await new Promise((resolve) => setTimeout(resolve, 800));
     return [
-      {
-        id: '1',
-        title: '손흥민 프리미어리그 통산 득점 신기록 도전',
-        category: 'Sports',
-        angle: '데이터 분석',
-        urgency: 'High',
-      },
-      {
-        id: '2',
-        title: '글로벌 OTT 신작 라인업과 K-콘텐츠 위상',
-        category: 'Entertainment',
-        angle: '산업 리포트',
-        urgency: 'Medium',
-      },
-      {
-        id: '3',
-        title: 'K-배터리 전고체 전지 로드맵 발표',
-        category: 'Tech',
-        angle: '시장 점유율 전망',
-        urgency: 'High',
-      },
-      {
-        id: '4',
-        title: '프로야구 개막 시즌 관전 포인트',
-        category: 'Sports',
-        angle: '현장 취재',
-        urgency: 'Low',
-      },
+      { id: '1', title: '손흥민 프리미어리그 통산 득점 신기록 도전', category: 'Sports', angle: '데이터 분석', urgency: 'High' },
+      { id: '2', title: '글로벌 OTT 신작 라인업과 K-콘텐츠 위상', category: 'Entertainment', angle: '산업 리포트', urgency: 'Medium' },
+      { id: '3', title: 'K-배터리 전고체 전지 로드맵 발표', category: 'Tech', angle: '시장 점유율 전망', urgency: 'High' },
+      { id: '4', title: '프로야구 개막 시즌 관전 포인트', category: 'Sports', angle: '현장 취재', urgency: 'Low' },
     ];
   }
 
-  try {
-    const response = await fetch('/api/suggestions');
-    if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error || 'Failed to fetch suggestions');
+  return callWithRetry(async () => {
+    try {
+      const ai = createAI();
+      const currentDate = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-pro-preview',
+        contents: `당신은 대한민국 대표 일간지인 동아일보의 AI 편집국장입니다. 오늘 날짜는 ${currentDate}입니다. Google 검색 도구를 사용하여 현재 대한민국에서 가장 화제가 되고 있는 정치, 경제, 사회, IT/과학 분야의 핵심 뉴스 4가지를 찾아 취재 아이템으로 추천하세요. 반드시 현재 실제로 보도되고 있는 실시간 속보 및 주요 뉴스여야 합니다.`,
+        config: {
+          tools: [{ googleSearch: {} }],
+          temperature: 0.1,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                id: { type: Type.STRING },
+                title: { type: Type.STRING },
+                category: { type: Type.STRING },
+                angle: { type: Type.STRING },
+                urgency: { type: Type.STRING },
+              },
+              required: ['id', 'title', 'category', 'angle', 'urgency'],
+            },
+          },
+        },
+      });
+
+      const text = response.text?.trim();
+      if (!text) throw new Error('Empty response from AI');
+      return JSON.parse(text);
+    } catch (error) {
+      return handleAIError(error);
     }
-    return await response.json();
-  } catch (error) {
-    return handleAIError(error);
-  }
+  });
 };
 
 export const searchReferenceMaterials = async (query: string, isMock: boolean = false) => {
@@ -207,20 +298,69 @@ export const searchReferenceMaterials = async (query: string, isMock: boolean = 
     };
   }
 
-  try {
-    const response = await fetch(`/api/search-news?query=${encodeURIComponent(query)}`);
-    if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error || 'Failed to search news');
+  return callWithRetry(async () => {
+    try {
+      const ai = createAI();
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-pro-preview',
+        contents: `"${query}" 관련 최신 한국 뉴스를 검색해주세요. 동아일보·조선일보·중앙일보·한겨레·연합뉴스·KBS·MBC·SBS·JTBC·매일경제·한국경제 등 주요 언론사 기사를 중심으로 3~4개 찾아서, 각 기사의 제목과 핵심 내용 1~2문장을 한국어로 알려주세요.`,
+        config: {
+          tools: [{ googleSearch: {} }],
+          temperature: 0.1,
+        },
+      });
+
+      const responseText = response.text ?? '';
+      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
+      
+      let items = [];
+
+      if (chunks.length > 0) {
+        const textLines = responseText.split('\n').map(l => l.trim()).filter(Boolean);
+        items = chunks
+          .filter(c => c.web?.uri && isLikelyArticleUrl(c.web.uri))
+          .map(c => {
+            const uri = c.web!.uri!;
+            const title = c.web?.title ?? '';
+            const hostname = getHostname(uri);
+            const mediaName = inferMediaNameFromHostname(uri);
+            const keywords = title.replace(/[^\w가-힣\s]/g, '').split(/\s+/).filter(w => w.length > 1).slice(0, 4);
+            const matched = textLines.find(l => keywords.filter(k => l.includes(k)).length >= Math.min(2, keywords.length)) ?? '';
+            const snippet = matched.replace(/^[-•*\d.]+\s*/, '').replace(uri, '').trim().slice(0, 200);
+            return { uri, title, mediaName, hostname, snippet, image: FALLBACK_NEWS_IMAGE };
+          })
+          .filter(item => item.uri && item.title);
+      }
+
+      if (items.length === 0 && responseText) {
+        const urlRegex = /https?:\/\/[^\s\)\]\>"']+/g;
+        const foundUrls = [...new Set(responseText.match(urlRegex) ?? [])];
+        const newsUrls = foundUrls.filter(url => isTrustedMedia(url) && isLikelyArticleUrl(url));
+        const textLines = responseText.split('\n').map(l => l.trim()).filter(Boolean);
+
+        items = newsUrls.slice(0, 4).map(uri => {
+          const urlLineIdx = textLines.findIndex(l => l.includes(uri));
+          const nearby = textLines.slice(Math.max(0, urlLineIdx - 2), urlLineIdx + 3).join(' ');
+          const snippet = nearby.replace(uri, '').replace(/^[-•*\d.]+\s*/, '').trim().slice(0, 200);
+          return {
+            uri,
+            title: snippet.slice(0, 60) || '관련 기사',
+            mediaName: inferMediaNameFromHostname(uri),
+            hostname: getHostname(uri),
+            snippet,
+            image: FALLBACK_NEWS_IMAGE,
+          };
+        });
+      }
+
+      return {
+        summary: `"${query}" 관련 최신 뉴스 검색 결과입니다.`,
+        references: items,
+      };
+    } catch (error) {
+      return handleAIError(error);
     }
-    const data = await response.json();
-    return {
-      summary: `"${query}" 관련 최신 뉴스 검색 결과입니다.`,
-      references: data.items || [],
-    };
-  } catch (error) {
-    return handleAIError(error);
-  }
+  });
 };
 
 export const generateFactBasedArticle = async (
@@ -234,8 +374,7 @@ export const generateFactBasedArticle = async (
       title: `[분석] ${topic}의 핵심 포인트`,
       category,
       summary: 'AI가 분석한 실시간 핵심 요약 기사입니다.',
-      content:
-        '<p>이번 사건은 해당 업계에 큰 파장을 일으키고 있습니다.</p><p>전문가들은 이번 변화가 장기적인 트렌드가 될 것으로 내다보고 있습니다.</p>',
+      content: '<p>이번 사건은 해당 업계에 큰 파장을 일으키고 있습니다.</p><p>전문가들은 이번 변화가 장기적인 트렌드가 될 것으로 내다보고 있습니다.</p>',
       factCheck: ['상위 채널 교차 검증 완료', '업계 전문가 의견 수렴', '데이터 기반 트렌드 분석'],
       sources: ['관련 공식 발표'],
       searchSources: [],
@@ -243,20 +382,88 @@ export const generateFactBasedArticle = async (
     };
   }
 
-  try {
-    const response = await fetch('/api/write-article', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ topic, category }),
-    });
-    if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error || 'Failed to generate article');
+  return callWithRetry(async () => {
+    try {
+      const ai = createAI();
+      
+      // 1단계: 내용 수집
+      const searchRes = await ai.models.generateContent({
+        model: 'gemini-3.1-pro-preview',
+        contents: `"${topic}"을 검색해서 최신 한국 뉴스 보도 내용을 상세하게 정리해주세요. 동아일보·조선일보·중앙일보·한겨레·연합뉴스·KBS·MBC·SBS·JTBC·매일경제·한국경제 등 주요 언론사 기사를 중심으로, 실제 보도된 사실·수치·인물 발언·날짜·기관명을 최대한 구체적으로 정리해주세요.`,
+        config: {
+          tools: [{ googleSearch: {} }],
+          temperature: 0.1,
+        },
+      });
+
+      const searchContent = searchRes.text?.trim() ?? '';
+      const chunks = searchRes.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
+
+      if (searchContent.length < 50 && chunks.length === 0) {
+        throw new Error('최신 정보를 검색하지 못했습니다. 잠시 후 다시 시도해주세요.');
+      }
+
+      const contentLines = searchContent.split('\n').map(l => l.trim()).filter(Boolean);
+      const sources = chunks
+        .filter(c => c.web?.uri && isLikelyArticleUrl(c.web.uri))
+        .slice(0, 4)
+        .map(c => {
+          const uri = c.web!.uri!;
+          const title = c.web?.title ?? '';
+          const hostname = getHostname(uri);
+          const mediaName = inferMediaNameFromHostname(uri);
+          const keywords = title.replace(/[^\w가-힣\s]/g, '').split(/\s+/).filter(w => w.length > 1).slice(0, 4);
+          const matchedLine = contentLines.find(l => keywords.filter(k => l.includes(k)).length >= Math.min(2, keywords.length)) ?? '';
+          const snippet = matchedLine.replace(/^[-•*\d.]+\s*/, '').trim().slice(0, 200);
+          return { uri, title, mediaName, hostname, snippet, image: FALLBACK_NEWS_IMAGE };
+        });
+
+      // 2단계: 기사 작성
+      const writeRes = await ai.models.generateContent({
+        model: 'gemini-3.1-pro-preview',
+        contents: `당신은 동아일보의 전문 기자입니다.
+주제: "${topic}" (카테고리: ${category || 'general'})
+
+아래는 Google 검색으로 수집한 실제 최신 보도 내용입니다. 이 내용에 있는 사실만 사용해서 기사를 작성하세요.
+
+[실제 검색된 최신 보도 내용]
+${searchContent}
+
+[기사 작성 규칙]
+1. 마크다운 기호(###, **, *) 절대 금지
+2. 본문은 <p> 태그로 문단 구분, 최소 5문단
+3. 소제목은 <h3 style="font-family:Pretendard;margin-top:24px;color:#1a3a6b;">소제목</h3>
+4. 위 검색 내용의 수치·인물·기관명·날짜를 그대로 사용
+5. summary는 2~3문장 요약
+6. factCheck는 위 검색 내용에서 확인된 핵심 팩트 3가지`,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING },
+              category: { type: Type.STRING },
+              summary: { type: Type.STRING },
+              content: { type: Type.STRING },
+              factCheck: { type: Type.ARRAY, items: { type: Type.STRING } },
+              imageKeyword: { type: Type.STRING },
+            },
+            required: ['title', 'category', 'summary', 'content', 'factCheck', 'imageKeyword'],
+          },
+          temperature: 0.2,
+        },
+      });
+
+      const parsed = safeJsonParse(writeRes.text);
+      return {
+        ...parsed,
+        searchSources: sources,
+        citedIndices: [],
+      };
+    } catch (error) {
+      return handleAIError(error);
     }
-    return await response.json();
-  } catch (error) {
-    return handleAIError(error);
-  }
+  });
 };
 
 const buildImageDirection = (prompt: string) => {
