@@ -250,8 +250,13 @@ const AIWriter: React.FC = () => {
   };
 
   const handleSearchItemGenerate = (item: SearchSource) => {
-    setTopic(item.title);
-    setTimeout(() => handleCreate(), 100);
+    const newTopic = item.title;
+    const context = item.snippet;
+    setTopic(newTopic);
+    // 상태 업데이트 지연을 방지하기 위해 주제와 컨텍스트를 직접 전달
+    setTimeout(() => {
+      handleCreate(undefined, newTopic, context);
+    }, 50);
   };
 
   useEffect(() => {
@@ -332,12 +337,13 @@ const AIWriter: React.FC = () => {
     }
   };
 
-  const handleCreate = async (retryIdArg?: string | React.MouseEvent) => {
+  const handleCreate = async (retryIdArg?: string | React.MouseEvent, overrideTopic?: string, context?: string) => {
     // 버튼 클릭 시 이벤트 객체가 들어올 수 있으므로 문자열인 경우만 ID로 인정
     const retryId = typeof retryIdArg === 'string' ? retryIdArg : undefined;
+    const targetTopic = overrideTopic || topic;
 
-    if (loading || !topic.trim()) {
-      if (!topic.trim()) alert('주제를 입력하세요.');
+    if (loading || !targetTopic.trim()) {
+      if (!targetTopic.trim()) alert('주제를 입력하세요.');
       return;
     }
 
@@ -354,11 +360,11 @@ const AIWriter: React.FC = () => {
     
     try {
       setStatusText('최신 기사 검색 중...');
-      const result = (await generateFactBasedArticle(topic, category, false)) as GeneratedArticle;
+      const result = (await generateFactBasedArticle(targetTopic, category, false, context)) as GeneratedArticle;
 
       const articleId = retryId || `art_${Date.now()}`;
       const cleaned = cleanContent(result.content);
-      const normalizedSources = normalizeSearchSources(result.searchSources || [], topic);
+      const normalizedSources = normalizeSearchSources(result.searchSources || [], targetTopic);
 
       const newArticle: Article = {
         id: articleId,
@@ -388,6 +394,12 @@ const AIWriter: React.FC = () => {
       setImageResult(img);
       localStorage.setItem('donga_writer_image', img || '');
       await saveToDashboard(articleWithImage, img); // 이미지 포함해서 업데이트
+      
+      // 기사 생성 후 카테고리 업데이트 (AI가 판단한 카테고리로)
+      if (result.category) {
+        setCategory(result.category.toLowerCase());
+      }
+      
       showToast('기사가 대시보드에 저장되었습니다 ✓');
     } catch (e: unknown) {
       console.error('Article creation error:', e);

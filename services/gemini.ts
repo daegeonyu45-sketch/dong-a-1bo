@@ -379,7 +379,8 @@ export const searchReferenceMaterials = async (query: string, isMock: boolean = 
 export const generateFactBasedArticle = async (
   topic: string,
   category: string,
-  isMock: boolean = false
+  isMock: boolean = false,
+  context?: string
 ) => {
   if (isMock) {
     await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -402,7 +403,9 @@ export const generateFactBasedArticle = async (
       // 1단계: 내용 수집
       const searchRes = await ai.models.generateContent({
         model: 'gemini-3.1-pro-preview',
-        contents: `"${topic}"을 검색해서 최신 한국 뉴스 보도 내용을 상세하게 정리해주세요. 동아일보·조선일보·중앙일보·한겨레·연합뉴스·KBS·MBC·SBS·JTBC·매일경제·한국경제 등 주요 언론사 기사를 중심으로, 실제 보도된 사실·수치·인물 발언·날짜·기관명을 최대한 구체적으로 정리해주세요.`,
+        contents: `주제: "${topic}"
+${context ? `[참고 정보]: ${context}\n` : ''}
+위 주제와 관련된 최신 한국 뉴스 보도 내용을 Google 검색을 통해 상세하게 정리해주세요. 동아일보·조선일보·중앙일보·한겨레·연합뉴스·KBS·MBC·SBS·JTBC·매일경제·한국경제 등 주요 언론사 기사를 중심으로, 실제 보도된 사실·수치·인물 발언·날짜·기관명을 최대한 구체적으로 정리해주세요.`,
         config: {
           tools: [{ googleSearch: {} }],
           temperature: 0.1,
