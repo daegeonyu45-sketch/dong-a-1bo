@@ -64,7 +64,13 @@ const safeJsonParse = (text: string) => {
 
 export const handleAIError = (error: unknown) => {
   console.error('Gemini API Error Details:', error);
-  const errorStr = typeof error === 'string' ? error : JSON.stringify(error);
+  
+  let errorStr = '';
+  try {
+    errorStr = typeof error === 'string' ? error : (error instanceof Error ? error.message : JSON.stringify(error));
+  } catch {
+    errorStr = String(error);
+  }
 
   if (
     errorStr.includes('404') ||

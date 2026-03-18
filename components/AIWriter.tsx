@@ -332,7 +332,10 @@ const AIWriter: React.FC = () => {
     }
   };
 
-  const handleCreate = async (retryId?: string) => {
+  const handleCreate = async (retryIdArg?: string | React.MouseEvent) => {
+    // 버튼 클릭 시 이벤트 객체가 들어올 수 있으므로 문자열인 경우만 ID로 인정
+    const retryId = typeof retryIdArg === 'string' ? retryIdArg : undefined;
+
     if (loading || !topic.trim()) {
       if (!topic.trim()) alert('주제를 입력하세요.');
       return;
