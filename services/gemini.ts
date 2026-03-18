@@ -280,6 +280,7 @@ export const generateCoverageSuggestions = async (isMock: boolean = false) => {
               required: ['id', 'title', 'category', 'angle', 'urgency'],
             },
           },
+          maxOutputTokens: 1000,
         },
       });
 
@@ -320,6 +321,7 @@ export const searchReferenceMaterials = async (query: string, isMock: boolean = 
         config: {
           tools: [{ googleSearch: {} }],
           temperature: 0.1,
+          maxOutputTokens: 1500,
         },
       });
 
@@ -416,6 +418,7 @@ ${context ? `[참고 정보/맥락]: ${context}\n` : ''}
         config: {
           tools: [{ googleSearch: {} }],
           temperature: 0.1,
+          maxOutputTokens: 2000, // 검색 결과 요약은 2000토큰 내외로 제한
         },
       });
 
@@ -424,6 +427,11 @@ ${context ? `[참고 정보/맥락]: ${context}\n` : ''}
       if (!searchContent) {
         const parts = searchRes.candidates?.[0]?.content?.parts || [];
         searchContent = parts.map(p => p.text || '').join('').trim();
+      }
+
+      // 검색 내용이 너무 길면 잘라내어 다음 단계의 토큰 한도 초과 방지
+      if (searchContent.length > 8000) {
+        searchContent = searchContent.slice(0, 8000) + '... [내용 중략]';
       }
       const chunks = searchRes.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
 
@@ -481,6 +489,7 @@ ${searchContent}
             required: ['title', 'category', 'summary', 'content', 'factCheck', 'imageKeyword'],
           },
           temperature: 0.2,
+          maxOutputTokens: 4000, // 기사 작성은 4000토큰 내외로 제한
         },
       });
 
