@@ -477,22 +477,38 @@ const AIWriter: React.FC = () => {
                 : <Search size={18} />}
             </div>
             <input
-              className="w-full pl-11 pr-10 py-3.5 bg-[#111] border-2 border-gray-800 rounded-2xl text-base font-sans text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 shadow-sm transition-all"
+              className="w-full pl-11 pr-24 py-3.5 bg-[#111] border-2 border-gray-800 rounded-2xl text-base font-sans text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 shadow-sm transition-all"
               placeholder="뉴스를 검색하세요... (예: 반도체 수출, 금리 인상)"
               value={searchQuery}
               onChange={handleSearchQueryChange}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') { setSearchQuery(''); setSearchResults([]); }
+                if (e.key === 'Enter') {
+                  if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+                  doSearch(searchQuery);
+                }
               }}
             />
-            {searchQuery && (
+            <div className="absolute right-2 flex items-center gap-1">
+              {searchQuery && (
+                <button
+                  className="p-2 text-gray-400 hover:text-white transition-colors"
+                  onClick={() => { setSearchQuery(''); setSearchResults([]); }}
+                >
+                  <X size={16} />
+                </button>
+              )}
               <button
-                className="absolute right-4 text-gray-300 hover:text-gray-500 transition-colors"
-                onClick={() => { setSearchQuery(''); setSearchResults([]); }}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-xl text-sm font-bold transition-all flex items-center gap-1.5"
+                onClick={() => {
+                  if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+                  doSearch(searchQuery);
+                }}
               >
-                <X size={16} />
+                {searchLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                검색
               </button>
-            )}
+            </div>
           </div>
 
           {/* 검색 결과 카드 (인라인) */}
