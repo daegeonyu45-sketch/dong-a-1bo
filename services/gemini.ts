@@ -183,54 +183,16 @@ export const generateCoverageSuggestions = async (isMock: boolean = false) => {
     ];
   }
 
-  const currentDate = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
-
-  return callWithRetry(async () => {
-    try {
-      const ai = createAI();
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents:
-          `당신은 대한민국 대표 일간지인 동아일보의 AI 편집국장입니다. 
-오늘 날짜는 ${currentDate}입니다. 
-Google 검색 도구를 사용하여 현재 대한민국에서 가장 화제가 되고 있는 정치, 경제, 사회, IT/과학 분야의 핵심 뉴스 4가지를 찾아 취재 아이템으로 추천하세요. 
-
-지침:
-1. 반드시 현재 실제로 보도되고 있는 실시간 속보 및 주요 뉴스여야 합니다.
-2. 연합뉴스, 뉴스1, 뉴시스 등 주요 통신사와 동아일보를 포함한 주요 일간지의 보도를 우선적으로 참고하세요.
-3. 가상의 뉴스를 절대로 만들지 마세요.
-4. 각 아이템에 대해 전문적인 취재 방향(angle)과 긴급도(urgency: High/Medium/Low)를 설정하세요.`,
-        config: {
-          tools: [{ googleSearch: {} }],
-          temperature: 0.1,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                id: { type: Type.STRING },
-                title: { type: Type.STRING },
-                category: { type: Type.STRING },
-                angle: { type: Type.STRING },
-                urgency: { type: Type.STRING },
-              },
-              required: ['id', 'title', 'category', 'angle', 'urgency'],
-            },
-          },
-        },
-      });
-
-      const text = response.text?.trim();
-      if (!text) {
-        throw new Error('EMPTY_RESPONSE');
-      }
-
-      return safeJsonParse(text);
-    } catch (error) {
-      return handleAIError(error);
+  try {
+    const response = await fetch('/api/suggestions');
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || 'Failed to fetch suggestions');
     }
-  });
+    return await response.json();
+  } catch (error) {
+    return handleAIError(error);
+  }
 };
 
 export const searchReferenceMaterials = async (query: string, isMock: boolean = false) => {
@@ -245,62 +207,20 @@ export const searchReferenceMaterials = async (query: string, isMock: boolean = 
     };
   }
 
-  const currentDate = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
-
-  return callWithRetry(async () => {
-    try {
-      const ai = createAI();
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `당신은 동아일보의 AI 편집국장입니다. 오늘 날짜는 ${currentDate}입니다. 
-"${query}" 주제에 대해 현재 대한민국에서 실제로 보도되고 있는 **가장 최신의 뉴스 기사(실시간 속보)**들을 검색하여 심층 취재를 위한 참고 자료를 찾아주세요.
-
-지침:
-1. 반드시 Google 검색 도구를 사용하여 **최신순(Latest)**으로 보도된 실제 기사의 제목과 정확한 URL(uri)만 제공해야 합니다.
-2. 연합뉴스, 뉴스1, 뉴시스 등 주요 통신사와 동아일보를 포함한 주요 일간지의 보도를 최우선적으로 참고하세요.
-3. 절대로 존재하지 않는 가상의 URL을 생성하지 마세요.
-4. 검색 결과 중 오늘 또는 어제 보도된 기사를 우선적으로 선별하세요.
-5. 각 자료의 제목, 실제 URL, 언론사명, 그리고 핵심 내용을 요약해서 제공해주세요.
-
-응답은 반드시 아래 형식의 유효한 JSON으로만 답변해주세요. 
-CRITICAL: 모든 문자열 값 내의 큰따옴표(")는 반드시 백슬래시(\)로 이스케이프 처리해야 합니다(예: \"내용\"). 
-또한 JSON 블록 전후에 어떠한 설명이나 텍스트도 포함하지 마세요.
-
-{
-  "summary": "전체적인 취재 배경 및 현황 요약",
-  "references": [
-    {
-      "title": "기사 제목",
-      "uri": "기사 URL",
-      "snippet": "핵심 내용 요약",
-      "mediaName": "언론사명"
+  try {
+    const response = await fetch(`/api/search-news?query=${encodeURIComponent(query)}`);
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || 'Failed to search news');
     }
-  ]
-}`,
-        config: {
-          tools: [{ googleSearch: {} }],
-          temperature: 0.1,
-        },
-      });
-
-      const text = response.text?.trim();
-      if (!text) {
-        return {
-          summary: `"${query}" 관련 참고 자료를 찾지 못했습니다.`,
-          references: [],
-        };
-      }
-
-      const parsed = safeJsonParse(text);
-
-      return {
-        summary: parsed?.summary || `"${query}" 관련 참고 자료 요약이 없습니다.`,
-        references: Array.isArray(parsed?.references) ? parsed.references : [],
-      };
-    } catch (error) {
-      return handleAIError(error);
-    }
-  });
+    const data = await response.json();
+    return {
+      summary: `"${query}" 관련 최신 뉴스 검색 결과입니다.`,
+      references: data.items || [],
+    };
+  } catch (error) {
+    return handleAIError(error);
+  }
 };
 
 export const generateFactBasedArticle = async (
@@ -323,58 +243,20 @@ export const generateFactBasedArticle = async (
     };
   }
 
-  const currentDate = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
-
-  return callWithRetry(async () => {
-    try {
-      const ai = createAI();
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `당신은 동아일보의 AI 편집국장입니다. 오늘 날짜는 ${currentDate}입니다.
-주제: "${topic}"
-카테고리: "${category}"
-
-위 주제에 대해 **오늘 보도된 최신 뉴스(실시간 속보)**를 검색하여 심층 분석 기사를 작성해주세요.
-반드시 Google 검색 도구를 사용하여 현재 실제로 발생하고 있는 팩트를 기반으로 작성해야 합니다.
-
-지침:
-1. 기사는 동아일보 스타일의 신뢰감 있고 날카로운 분석이 포함되어야 합니다.
-2. 제목: 독자의 시선을 끄는 강렬한 헤드라인
-3. 요약: 기사 내용을 3줄 이내로 요약
-4. 본문: HTML 태그(<p>, <h3> 등)를 사용하여 가독성 있게 작성. 최소 3개 이상의 문단으로 구성. (최대 1500자 내외)
-5. 팩트체크: 기사 내용 중 오늘 보도된 검증된 사실들을 리스트로 정리.
-6. 이미지 키워드: 기사에 어울리는 이미지를 생성하기 위한 영어 키워드 (예: "korean economy skyscraper", "digital healthcare robot")
-
-응답은 반드시 아래 형식의 유효한 JSON으로만 답변해주세요.
-CRITICAL: 모든 문자열 값 내의 큰따옴표(")는 반드시 백슬래시(\)로 이스케이프 처리해야 합니다(예: \"내용\"). 
-본문(content) 내의 HTML 속성 등에 사용되는 따옴표도 모두 이스케이프 처리되어야 합니다.
-JSON 블록 전후에 어떠한 설명이나 텍스트도 포함하지 마세요.`,
-        config: {
-          tools: [{ googleSearch: {} }],
-          temperature: 0.1,
-        },
-      });
-
-      const text = response.text?.trim();
-      if (!text) throw new Error('Gemini로부터 응답을 받지 못했습니다.');
-
-      const parsed = safeJsonParse(text);
-      
-      // groundingMetadata에서 출처 정보 추출 (선택 사항)
-      const searchSources = response.candidates?.[0]?.groundingMetadata?.groundingChunks?.map(chunk => ({
-        title: chunk.web?.title || '관련 기사',
-        uri: chunk.web?.uri || '',
-        snippet: ''
-      })).filter(s => s.uri) || [];
-
-      return {
-        ...parsed,
-        searchSources
-      };
-    } catch (error) {
-      return handleAIError(error);
+  try {
+    const response = await fetch('/api/write-article', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic, category }),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || 'Failed to generate article');
     }
-  });
+    return await response.json();
+  } catch (error) {
+    return handleAIError(error);
+  }
 };
 
 const buildImageDirection = (prompt: string) => {

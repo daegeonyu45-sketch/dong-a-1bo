@@ -401,6 +401,60 @@ ${searchContent}
   }
 });
 
+app.get('/api/suggestions', async (req, res) => {
+  try {
+    const getValidKey = () => {
+      const keys = [process.env.GEMINI_API_KEY, process.env.API_KEY];
+      for (const key of keys) {
+        if (key && !key.includes('TODO') && !key.includes('YOUR_') && key.length > 20) {
+          return key;
+        }
+      }
+      return null;
+    };
+
+    const apiKey = getValidKey();
+    if (!apiKey) return res.status(500).json({ error: 'API key missing' });
+
+    const { GoogleGenAI, Type } = await import('@google/genai');
+    const ai = new GoogleGenAI({ apiKey });
+
+    const currentDate = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `당신은 대한민국 대표 일간지인 동아일보의 AI 편집국장입니다. 오늘 날짜는 ${currentDate}입니다. Google 검색 도구를 사용하여 현재 대한민국에서 가장 화제가 되고 있는 정치, 경제, 사회, IT/과학 분야의 핵심 뉴스 4가지를 찾아 취재 아이템으로 추천하세요. 반드시 현재 실제로 보도되고 있는 실시간 속보 및 주요 뉴스여야 합니다.`,
+      config: {
+        tools: [{ googleSearch: {} }],
+        temperature: 0.1,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.STRING },
+              title: { type: Type.STRING },
+              category: { type: Type.STRING },
+              angle: { type: Type.STRING },
+              urgency: { type: Type.STRING },
+            },
+            required: ['id', 'title', 'category', 'angle', 'urgency'],
+          },
+        },
+      },
+    });
+
+    const text = response.text?.trim();
+    if (!text) throw new Error('Empty response');
+    
+    return res.json(JSON.parse(text));
+  } catch (error) {
+    console.error('suggestions error:', error);
+    return res.status(500).json({ error: String(error) });
+  }
+});
+
 // Vite middleware for development
 if (process.env.NODE_ENV !== 'production') {
   const vite = await createViteServer({

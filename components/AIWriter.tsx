@@ -229,7 +229,7 @@ const AIWriter: React.FC = () => {
       if (e instanceof Error && e.message === 'QUOTA_EXCEEDED') {
         setErrorMsg('API 할당량이 소진되어 검색 결과를 불러올 수 없습니다.');
       } else {
-        setErrorMsg('검색 중 오류가 발생했습니다. API 키 설정을 확인해주세요.');
+        setErrorMsg('검색 중 오류가 발생했습니다. 서버 설정을 확인해주세요.');
       }
     } finally {
       setSearchLoading(false);
@@ -285,7 +285,7 @@ const AIWriter: React.FC = () => {
       if (e instanceof Error && e.message === 'QUOTA_EXCEEDED') {
         setErrorMsg('API 할당량이 소진되어 실시간 이슈를 불러올 수 없습니다.');
       } else {
-        setErrorMsg('실시간 이슈를 불러오는 중 오류가 발생했습니다. API 키 설정을 확인해주세요.');
+        setErrorMsg('실시간 이슈를 불러오는 중 오류가 발생했습니다. 서버 설정을 확인해주세요.');
       }
     } finally {
       setLoadingSuggestions(false);
@@ -605,7 +605,7 @@ const AIWriter: React.FC = () => {
               <div className="col-span-full py-8 px-4 text-center bg-orange-50 rounded-xl border border-orange-200">
                 <AlertCircle size={24} className="mx-auto mb-2 text-orange-500" />
                 <p className="text-orange-700 font-bold text-sm mb-1">{errorMsg}</p>
-                <p className="text-orange-600/70 text-xs">Vercel 환경 변수(GEMINI_API_KEY) 설정을 확인하고 재배포해주세요.</p>
+                <p className="text-orange-600/70 text-xs">Vercel 환경 변수(GEMINI_API_KEY) 설정이 올바른지 확인해주세요.</p>
               </div>
             ) : Array.isArray(suggestions) && suggestions.length > 0 ? (
               suggestions.map((item) => {
