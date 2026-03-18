@@ -189,10 +189,10 @@ export const generateCoverageSuggestions = async (isMock: boolean = false) => {
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents:
-          '당신은 동아일보의 AI 편집국장입니다. 정치, 경제, 사회, IT/과학, 연예, 스포츠 전 분야를 통틀어 실시간으로 취재할 가치가 높은 4가지 아이템을 추천하세요. 반드시 현재 실제로 발생하고 있는 최신 뉴스여야 합니다.',
+          '당신은 동아일보의 AI 편집국장입니다. Google 검색 도구를 사용하여 지금 이 순간(실시간) 가장 화제가 되고 있는 정치, 경제, 사회, IT/과학 분야의 핵심 뉴스 4가지를 찾아 취재 아이템으로 추천하세요. 반드시 현재 실제로 보도되고 있는 실시간 속보여야 하며, 가상의 뉴스를 만들지 마세요.',
         config: {
           tools: [{ googleSearch: {} }],
-          temperature: 0.2,
+          temperature: 0.1,
           responseMimeType: 'application/json',
           responseSchema: {
             type: Type.ARRAY,
@@ -240,26 +240,13 @@ export const searchReferenceMaterials = async (query: string, isMock: boolean = 
       const ai = createAI();
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `"${query}" 주제에 대해 심층 취재를 위한 참고 자료와 관련 보도 기사들을 찾아주세요.
-각 자료의 제목, URL, 언론사명, 그리고 핵심 내용을 요약해서 제공해주세요.
-가능하면 신뢰도 높은 언론사/공식 자료를 우선으로 정리해주세요.
+        contents: `"${query}" 주제에 대해 현재 실제로 보도된 뉴스 기사들을 검색하여 심층 취재를 위한 참고 자료를 찾아주세요.
+CRITICAL: 반드시 Google 검색 결과에 나타난 실제 기사의 제목과 정확한 URL(uri)만 제공해야 합니다. 절대로 존재하지 않는 가상의 URL을 생성하지 마세요.
+각 자료의 제목, 실제 URL, 언론사명, 그리고 핵심 내용을 요약해서 제공해주세요.
 
 응답은 반드시 아래 형식의 유효한 JSON으로만 답변해주세요. 
 CRITICAL: 모든 문자열 값 내의 큰따옴표(")는 반드시 백슬래시(\)로 이스케이프 처리해야 합니다(예: \"내용\"). 
 또한 JSON 블록 전후에 어떠한 설명이나 텍스트도 포함하지 마세요.
-
-예시:
-{
-  "summary": "최근 \"인공지능\" 기술의 발전으로...",
-  "references": [
-    {
-      "title": "AI가 바꿀 \"미래\"의 모습",
-      "uri": "https://example.com",
-      "snippet": "전문가들은 \"혁신\"이 필요하다고 말합니다.",
-      "mediaName": "동아일보"
-    }
-  ]
-}
 
 {
   "summary": "전체적인 취재 배경 및 현황 요약",
@@ -274,7 +261,7 @@ CRITICAL: 모든 문자열 값 내의 큰따옴표(")는 반드시 백슬래시(
 }`,
         config: {
           tools: [{ googleSearch: {} }],
-          temperature: 0.2,
+          temperature: 0.1,
         },
       });
 
