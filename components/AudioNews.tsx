@@ -26,6 +26,18 @@ const AudioNews: React.FC = () => {
   const startTimeRef = useRef<number>(0);
   const isManuallyStoppedRef = useRef<boolean>(false);
 
+  const safeLocalStorageSet = (key: string, value: string) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch (e) {
+      if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+        console.warn(`LocalStorage quota exceeded for key: ${key}. Data not saved to storage.`);
+      } else {
+        console.error(`Error saving to localStorage for key: ${key}`, e);
+      }
+    }
+  };
+
   const initAudioContext = () => {
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || (window as Window & typeof globalThis & { webkitAudioContext: typeof AudioContext }).webkitAudioContext)({ sampleRate: 24000 });
@@ -47,7 +59,7 @@ const AudioNews: React.FC = () => {
   };
 
   useEffect(() => {
-    localStorage.setItem('donga_audio_session', JSON.stringify({
+    safeLocalStorageSet('donga_audio_session', JSON.stringify({
       text: inputText,
       savedLyrics: lyrics
     }));

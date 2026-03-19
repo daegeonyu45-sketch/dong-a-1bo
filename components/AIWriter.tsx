@@ -163,6 +163,16 @@ const normalizeSearchSources = (sources?: SearchSource[], topic?: string) => {
     });
 };
 
+const safeLocalStorageSet = (key: string, value: string) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch (e) {
+    console.warn(`localStorage setItem failed for key "${key}":`, e);
+    // If quota exceeded, we just don't save it. 
+    // The app will still work in the current session.
+  }
+};
+
 const AIWriter: React.FC = () => {
   const [topic, setTopic] = useState(() => localStorage.getItem('donga_writer_topic') || '');
   const [category, setCategory] = useState(() => localStorage.getItem('donga_writer_category') || 'social');
@@ -185,7 +195,10 @@ const AIWriter: React.FC = () => {
     }
   });
 
-  const [imageResult, setImageResult] = useState<string | null>(() => localStorage.getItem('donga_writer_image'));
+  const [imageResult, setImageResult] = useState<string | null>(() => {
+    if (articleData?.image) return articleData.image;
+    return localStorage.getItem('donga_writer_image');
+  });
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -260,23 +273,23 @@ const AIWriter: React.FC = () => {
   };
 
   useEffect(() => {
-    localStorage.setItem('donga_writer_topic', topic);
+    safeLocalStorageSet('donga_writer_topic', topic);
   }, [topic]);
 
   useEffect(() => {
-    localStorage.setItem('donga_writer_category', category);
+    safeLocalStorageSet('donga_writer_category', category);
   }, [category]);
 
   useEffect(() => {
-    localStorage.setItem('donga_writer_search_query', searchQuery);
+    safeLocalStorageSet('donga_writer_search_query', searchQuery);
   }, [searchQuery]);
 
   useEffect(() => {
-    localStorage.setItem('donga_writer_search_results', JSON.stringify(searchResults));
+    safeLocalStorageSet('donga_writer_search_results', JSON.stringify(searchResults));
   }, [searchResults]);
 
   useEffect(() => {
-    localStorage.setItem('donga_writer_suggestions', JSON.stringify(suggestions));
+    safeLocalStorageSet('donga_writer_suggestions', JSON.stringify(suggestions));
   }, [suggestions]);
 
   const fetchSuggestions = useCallback(async () => {
@@ -362,16 +375,20 @@ const AIWriter: React.FC = () => {
       setStatusText('최신 기사 검색 중...');
       const result = (await generateFactBasedArticle(targetTopic, category, false, context)) as GeneratedArticle;
 
+      if (!result || !result.content) {
+        throw new Error('기사 내용을 생성하지 못했습니다. 주제를 조금 더 구체적으로 입력해 보세요.');
+      }
+
       const articleId = retryId || `art_${Date.now()}`;
       const cleaned = cleanContent(result.content);
       const normalizedSources = normalizeSearchSources(result.searchSources || [], targetTopic);
 
       const newArticle: Article = {
         id: articleId,
-        title: result.title,
-        summary: result.summary,
+        title: result.title || targetTopic,
+        summary: result.summary || '최신 정보를 바탕으로 작성된 기사입니다.',
         content: cleaned,
-        category: result.category,
+        category: result.category || category || 'General',
         factCheck: Array.isArray(result.factCheck) ? result.factCheck : [],
         citedIndices: [],
         searchSources: normalizedSources,
@@ -379,7 +396,7 @@ const AIWriter: React.FC = () => {
       };
 
       setArticleData(newArticle);
-      localStorage.setItem('donga_writer_article', JSON.stringify(newArticle));
+      safeLocalStorageSet('donga_writer_article', JSON.stringify(newArticle));
       await saveToDashboard(newArticle, null); // 이미지 없이 먼저 저장
 
       setStatusText('현장감 있는 보도 이미지 생성 중...');
@@ -390,9 +407,9 @@ const AIWriter: React.FC = () => {
       
       const articleWithImage = { ...newArticle, image: img };
       setArticleData(articleWithImage);
-      localStorage.setItem('donga_writer_article', JSON.stringify(articleWithImage));
+      safeLocalStorageSet('donga_writer_article', JSON.stringify(articleWithImage));
       setImageResult(img);
-      localStorage.setItem('donga_writer_image', img || '');
+      // donga_writer_image is now redundant as it's part of donga_writer_article
       await saveToDashboard(articleWithImage, img); // 이미지 포함해서 업데이트
       
       // 기사 생성 후 카테고리 업데이트 (AI가 판단한 카테고리로)
@@ -404,7 +421,9 @@ const AIWriter: React.FC = () => {
     } catch (e: unknown) {
       console.error('Article creation error:', e);
       if (e instanceof Error && e.message === 'QUOTA_EXCEEDED') {
-        setErrorMsg('API 할당량이 소진되었습니다.');
+        setErrorMsg('API 할당량이 소진되었습니다. 잠시 후 다시 시도해 주세요.');
+      } else if (e instanceof Error && e.message.includes('SAFETY')) {
+        setErrorMsg('안전 정책에 의해 기사를 생성할 수 없는 주제입니다.');
       } else {
         const msg = e instanceof Error ? e.message : String(e);
         setErrorMsg(`기사 생성 중 오류가 발생했습니다: ${msg}`);
@@ -453,7 +472,7 @@ const AIWriter: React.FC = () => {
       content: editContent,
     };
     setArticleData(updated);
-    localStorage.setItem('donga_writer_article', JSON.stringify(updated));
+    safeLocalStorageSet('donga_writer_article', JSON.stringify(updated));
     await saveToDashboard(updated, imageResult); // 대시보드도 동기화
     setIsEditing(false);
     showToast('수정사항이 저장되었습니다');
@@ -868,6 +887,18 @@ const AIWriter: React.FC = () => {
                       <p className="text-lg leading-relaxed text-gray-700 m-0 font-medium">
                         {articleData.summary}
                       </p>
+
+                      {/* 요약 아래 출처 표시 */}
+                      {articleData.searchSources && articleData.searchSources.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-blue-100 flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-bold text-blue-900/60 uppercase tracking-wider">출처:</span>
+                          {Array.from(new Set(articleData.searchSources.map(s => s.mediaName || s.hostname || '언론사'))).map((media, idx, arr) => (
+                            <span key={idx} className="text-xs font-bold text-blue-800 bg-blue-100/50 px-2 py-0.5 rounded">
+                              {media}{idx < arr.length - 1 ? '' : ''}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     {/* ── 출처 및 참고 기사 ── */}
