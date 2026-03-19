@@ -256,21 +256,6 @@ const AIWriter: React.FC = () => {
     searchDebounceRef.current = setTimeout(() => doSearch(val), 500);
   };
 
-  // 검색 결과 클릭 → 기사 생성기 topic에만 반영
-  const handleSearchItemClick = (item: SearchSource) => {
-    setTopic(item.title);
-    window.scrollTo({ top: 600, behavior: 'smooth' });
-  };
-
-  const handleSearchItemGenerate = (item: SearchSource) => {
-    const newTopic = item.title;
-    const context = item.snippet;
-    setTopic(newTopic);
-    // 상태 업데이트 지연을 방지하기 위해 주제와 컨텍스트를 직접 전달
-    setTimeout(() => {
-      handleCreate(undefined, newTopic, context);
-    }, 50);
-  };
 
   useEffect(() => {
     safeLocalStorageSet('donga_writer_topic', topic);
@@ -577,7 +562,7 @@ const AIWriter: React.FC = () => {
                     <div
                       key={`sr-${i}`}
                       className="group bg-white border border-gray-200 rounded-xl p-4 flex flex-col justify-between shadow-sm hover:border-[#1a3a6b] hover:-translate-y-1 hover:shadow-lg transition-all duration-200 cursor-pointer"
-                      onClick={() => handleSearchItemClick(item)}
+                      onClick={() => item.uri && window.open(item.uri, '_blank')}
                     >
                       <div>
                         <div className="flex items-center justify-between mb-2">
@@ -585,15 +570,9 @@ const AIWriter: React.FC = () => {
                             {item.mediaName || item.hostname || '언론사'}
                           </span>
                           {isValid && (
-                            <a
-                              href={item.uri}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={e => e.stopPropagation()}
-                              className="text-gray-300 hover:text-[#1a3a6b] transition-colors"
-                            >
+                            <div className="text-gray-300 group-hover:text-[#1a3a6b] transition-colors">
                               <ExternalLink size={12} />
-                            </a>
+                            </div>
                           )}
                         </div>
                         <p className="text-sm font-bold text-gray-800 line-clamp-2 leading-snug group-hover:text-[#1a3a6b] mb-1.5">
@@ -605,12 +584,6 @@ const AIWriter: React.FC = () => {
                           </p>
                         )}
                       </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleSearchItemGenerate(item); }}
-                        className="mt-3 w-full flex items-center justify-center gap-1.5 text-[11px] font-bold text-white bg-[#1a3a6b] hover:bg-[#0f2448] py-1.5 rounded-lg transition-colors"
-                      >
-                        <Cpu size={11} /> 이 기사로 작성
-                      </button>
                     </div>
                   );
                 })}
